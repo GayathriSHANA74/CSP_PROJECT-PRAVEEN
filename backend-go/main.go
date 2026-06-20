@@ -212,13 +212,77 @@ func checkUrlScanZeroDay(targetURL string, apiKey string) bool {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("API-Key", apiKey)
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	resp, err := client.Do(req)
 	if err != nil || resp == nil {
 		return false
 	}
 	defer resp.Body.Close()
 
-	return resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusAccepted || resp.StatusCode == http.StatusCreated
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusCreated {
+		return false
+	}
+
+	var submitResp struct {
+		UUID string `json:"uuid"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&submitResp); err != nil {
+		return false
+	}
+
+	if submitResp.UUID == "" {
+		return false
+	}
+
+	// Poll for results. A scan normally takes 10-20 seconds.
+	// We will poll every 2 seconds up to 12 times (max 24 seconds).
+	resultURL := fmt.Sprintf("https://urlscan.io/api/v1/result/%s/", submitResp.UUID)
+
+	for i := 0; i < 5; i++ {
+		time.Sleep(2 * time.Second)
+
+		resultReq, err := http.NewRequest("GET", resultURL, nil)
+		if err != nil {
+			return false
+		}
+		resultReq.Header.Set("API-Key", apiKey)
+
+		resultResp, err := client.Do(resultReq)
+		if err != nil || resultResp == nil {
+			continue
+		}
+
+		var scanResult struct {
+			Verdicts struct {
+				Overall struct {
+					Malicious bool `json:"malicious"`
+				} `json:"overall"`
+			} `json:"verdicts"`
+		}
+		decodeErr := json.NewDecoder(resultResp.Body).Decode(&scanResult)
+		statusCode := resultResp.StatusCode
+		resultResp.Body.Close()
+
+		if statusCode == http.StatusNotFound {
+			// Scan still in progress
+			continue
+		}
+
+		if statusCode == http.StatusOK {
+			if decodeErr != nil {
+				return false
+			}
+			return scanResult.Verdicts.Overall.Malicious
+		}
+
+		// Any other status code indicates failure/completion issue
+		return false
+	}
+
+	return false
 }
 
 func sendJSONResponse(w http.ResponseWriter, resp ScanResponse) {
