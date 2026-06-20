@@ -30,11 +30,11 @@ android {
                 "proguard-rules.pro"
             )
             // Production URL
-            buildConfigField("String", "BASE_URL", "\"https://csp-project-3i3a.onrender.com/\"")
+            buildConfigField("String", "BASE_URL", "\"https://csp-project-praveen.onrender.com/\"")
         }
         debug {
             // Use production URL for testing so it works on any device
-            buildConfigField("String", "BASE_URL", "\"https://csp-project-3i3a.onrender.com/\"")
+            buildConfigField("String", "BASE_URL", "\"https://csp-project-praveen.onrender.com/\"")
         }
     }
 
